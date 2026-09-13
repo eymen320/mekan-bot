@@ -12,7 +12,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions
     ]
 });
 
@@ -192,6 +193,148 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embed] });
     }
 
+    // ==================== OYUN & EĞLENCE KOMUTLARI ====================
+
+    // ------------------ M.yazıtura ------------------
+    if (command === 'yazıtura') {
+        const results = ['Yazı 🪙', 'Tura 🪙'];
+        const outcome = results[Math.floor(Math.random() * results.length)];
+        return message.reply(`🪙 Para havaya atıldı ve... **${outcome}** geldi!`);
+    }
+
+    // ------------------ M.zar ------------------
+    if (command === 'zar') {
+        const dice = Math.floor(Math.random() * 6) + 1;
+        return message.reply(`🎲 Zar atıldı: **${dice}** geldi!`);
+    }
+
+    // ------------------ M.8ball ------------------
+    if (command === '8ball') {
+        const question = args.join(' ');
+        if (!question) return message.reply('❌ Lütfen 8ball\'a bir soru sorun. Örnek: `M.8ball Bugün şanslı mıyım?`');
+
+        const answers = [
+            'Evet, kesinlikle! ✨',
+            'Buna hiç şüphe yok. 👍',
+            'Büyük ihtimalle evet. 😊',
+            'Görünüşe göre evet. 🔮',
+            'Tam olarak emin değilim, tekrar sor. 🤔',
+            'Daha sonra tekrar dene. ⏳',
+            'Şu an tahmin edemiyorum. 🌫️',
+            'Pek sanmıyorum. 👎',
+            'Cevabım hayır. ❌',
+            'Şüphen bile olmasın: Hayır! 🙅'
+        ];
+        const reply = answers[Math.floor(Math.random() * answers.length)];
+
+        const embed = new EmbedBuilder()
+            .setTitle('🔮 8Ball Sihirli Küre')
+            .setColor('#9B59B6')
+            .addFields(
+                { name: '❓ Soru', value: question },
+                { name: '💬 Cevap', value: reply }
+            );
+
+        return message.reply({ embeds: [embed] });
+    }
+
+    // ------------------ M.düello ------------------
+    if (command === 'düello' || command === 'duello') {
+        const opponent = message.mentions.members.first();
+        if (!opponent) return message.reply('❌ Lütfen düello yapmak istediğiniz kişiyi etiketleyin.');
+        if (opponent.id === message.author.id) return message.reply('❌ Kendinizle düello yapamazsınız!');
+        if (opponent.user.bot) return message.reply('❌ Botlarla düello yapamazsınız!');
+
+        const winner = Math.random() < 0.5 ? message.author : opponent.user;
+        const loser = winner.id === message.author.id ? opponent.user : message.author;
+        const winnerHp = Math.floor(Math.random() * 40) + 10;
+
+        const embed = new EmbedBuilder()
+            .setTitle('⚔️ Düello Sonucu!')
+            .setColor('#E74C3C')
+            .setDescription(`**${message.author.username}** vs **${opponent.user.username}**\n\n🔥 Kıyasıya bir mücadeleden sonra **${winner.username}**, **${loser.username}** karşısında zafer kazandı!\n❤️ Kalan Can: **${winnerHp} HP**`);
+
+        return message.reply({ embeds: [embed] });
+    }
+
+    // ==================== SUNUCU İÇİ KULLANIŞLI ARAÇLAR ====================
+
+    // ------------------ M.duyuru ------------------
+    if (command === 'duyuru') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+            return message.reply('❌ Bu komut için **Mesajları Yönet** yetkiniz olması gerekir.');
+        }
+
+        const text = args.join(' ');
+        if (!text) return message.reply('❌ Lütfen duyuru metnini yazın. Örnek: `M.duyuru Sunucuda yeni kurallar eklendi!`');
+
+        await message.delete().catch(() => {});
+
+        const embed = new EmbedBuilder()
+            .setTitle('📢 Sunucu Duyurusu')
+            .setColor('#F1C40F')
+            .setDescription(text)
+            .setFooter({ text: `${message.author.username} tarafından duyuruldu`, iconURL: message.author.displayAvatarURL() })
+            .setTimestamp();
+
+        return message.channel.send({ embeds: [embed] });
+    }
+
+    // ------------------ M.oylama ------------------
+    if (command === 'oylama') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+            return message.reply('❌ Bu komut için **Mesajları Yönet** yetkiniz olması gerekir.');
+        }
+
+        const question = args.join(' ');
+        if (!question) return message.reply('❌ Lütfen oylama konusunu belirtin. Örnek: `M.oylama Bu akşam etkinlik yapalım mı?`');
+
+        await message.delete().catch(() => {});
+
+        const embed = new EmbedBuilder()
+            .setTitle('📊 Oylama Başladı!')
+            .setColor('#3498DB')
+            .setDescription(`**${question}**\n\nOy vermek için aşağıdaki tepkileri kullanabilirsiniz!`)
+            .setFooter({ text: `Oylamayı başlatan: ${message.author.username}` })
+            .setTimestamp();
+
+        const pollMsg = await message.channel.send({ embeds: [embed] });
+        await pollMsg.react('👍');
+        await pollMsg.react('👎');
+        return;
+    }
+
+    // ------------------ M.sil-üye ------------------
+    if (command === 'sil-üye' || command === 'silüye') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+            return message.reply('❌ Bu komut için **Mesajları Yönet** yetkiniz olması gerekir.');
+        }
+
+        const target = message.mentions.members.first();
+        const amount = parseInt(args[1]);
+
+        if (!target) return message.reply('❌ Lütfen bir kullanıcı etiketleyin. Örnek: `M.sil-üye @kullanıcı 10`');
+        if (isNaN(amount) || amount < 1 || amount > 100) return message.reply('❌ Lütfen 1 ile 100 arasında silinecek miktar girin.');
+
+        await message.delete().catch(() => {});
+
+        const fetched = await message.channel.messages.fetch({ limit: 100 });
+        const userMessages = fetched.filter(m => m.author.id === target.id).first(amount);
+
+        if (userMessages.length === 0) {
+            return message.channel.send('❌ Son 100 mesaj arasında bu kullanıcıya ait mesaj bulunamadı.').then(msg => {
+                setTimeout(() => msg.delete().catch(() => {}), 3000);
+            });
+        }
+
+        await message.channel.bulkDelete(userMessages, true);
+        return message.channel.send(`🧹 **${target.user.username}** kullanıcısının **${userMessages.length}** adet mesajı silindi.`).then(msg => {
+            setTimeout(() => msg.delete().catch(() => {}), 3000);
+        });
+    }
+
+    // ==================== MODERASYON KOMUTLARI ====================
+
     // ------------------ M.sil ------------------
     if (command === 'sil' || command === 'clear') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
@@ -203,17 +346,18 @@ client.on('messageCreate', async (message) => {
             return message.reply('❌ Lütfen 1 ile 100 arasında silinecek bir mesaj sayısı girin.');
         }
 
-        // Kullanıcının attığı "M.sil" komut mesajını siler
-        await message.delete().catch(() => {});
+        try {
+            await message.channel.bulkDelete(amount + 1, true);
 
-        // İstenen sayıdaki eski mesajları siler
-        await message.channel.bulkDelete(amount, true).catch(err => {
-            return message.channel.send('❌ 14 günden eski mesajlar silinemez.');
-        });
+            const infoMsg = await message.channel.send(`🧹 **${amount}** adet mesaj silindi.`);
+            setTimeout(() => infoMsg.delete().catch(() => {}), 3000);
 
-        return message.channel.send(`🧹 **${amount}** adet mesaj başarıyla silindi.`).then(msg => {
-            setTimeout(() => msg.delete().catch(() => {}), 3000);
-        });
+        } catch (err) {
+            console.error('Silme hatası:', err);
+            message.channel.send('❌ 14 günden eski mesajlar silinemez veya yetkim yetersiz.').then(msg => {
+                setTimeout(() => msg.delete().catch(() => {}), 3000);
+            });
+        }
     }
 
     // ------------------ M.yavaşmod ------------------
@@ -371,8 +515,10 @@ client.on('messageCreate', async (message) => {
             .setColor('#2F3136')
             .setDescription(`Tüm komutlar **${PREFIX}** ön eki ile çalışır.`)
             .addFields(
-                { name: '✨ Genel & Profil', value: '`M.xp` - XP durumunuzu gösterir.\n`M.afk [sebep]` - AFK kalmanızı sağlar.\n`M.profil [@kullanıcı]` - Kullanıcı profil detayları.\n`M.avatar [@kullanıcı]` - Profil resmini büyük açar.\n`M.banner [@kullanıcı]` - Profil afişini gösterir.\n`M.sunucubilgi` - Sunucu istatistikleri.' },
-                { name: '🛡️ Moderasyon & Yönetim', value: '`M.sil [sayı]` - 1-100 arası mesaj siler.\n`M.kick @kullanıcı` - Üyeyi sunucudan atar.\n`M.ban @kullanıcı` - Üyeyi yasaklar.\n`M.unban [ID]` - Yasaklanan üyenin banını açar.\n`M.mute @kullanıcı [1m/1h]` - Susturur.\n`M.unmute @kullanıcı` - Susturmayı kaldırır.\n`M.yavaşmod [saniye]` - Kanala yavaş mod koyar.\n`M.uyar @kullanıcı` - Uyarı verir.\n`M.uyarılar @kullanıcı` - Uyarı geçmişi.' }
+                { name: '✨ Genel & Profil', value: '`M.xp` - XP durumunuzu gösterir.\n`M.afk [sebep]` - AFK moduna geçmenizi sağlar.\n`M.profil [@kullanıcı]` - Kullanıcı detaylarını gösterir.\n`M.avatar [@kullanıcı]` - Profil resmini gösterir.\n`M.banner [@kullanıcı]` - Profil afişini gösterir.\n`M.sunucubilgi` - Sunucu istatistikleri.\n`M.ping` - Bot gecikmesini ölçer.' },
+                { name: '🎮 Oyun & Eğlence', value: '`M.yazıtura` - Yazı-tura atar.\n`M.zar` - 1-6 arası zar atar.\n`M.8ball [soru]` - Sihirli 8ball sorunuzu yanıtlar.\n`M.düello @kullanıcı` - Etiketlenen kişiyle düello yapar.' },
+                { name: '🛠️ Sunucu Araçları', value: '`M.duyuru [mesaj]` - Sunucuya duyuru atar.\n`M.oylama [soru]` - Oylama başlatır.\n`M.sil-üye @kullanıcı [miktar]` - Sadece o üyenin mesajlarını siler.' },
+                { name: '🛡️ Moderasyon & Yönetim', value: '`M.sil [sayı]` - Mesajları topluca siler.\n`M.kick @kullanıcı` - Üyeyi sunucudan atar.\n`M.ban @kullanıcı` - Üyeyi yasaklar.\n`M.unban [ID]` - Yasaklı üyenin banını açar.\n`M.mute @kullanıcı [1m/1h]` - Susturur.\n`M.unmute @kullanıcı` - Susturmayı kaldırır.\n`M.yavaşmod [saniye]` - Yavaş mod ayarlar.\n`M.uyar @kullanıcı` - Uyarı verir.\n`M.uyarılar @kullanıcı` - Uyarı geçmişi.' }
             );
 
         return message.reply({ embeds: [embed] });
