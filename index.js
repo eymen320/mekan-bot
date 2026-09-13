@@ -122,18 +122,127 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embed] });
     }
 
-    // ------------------ M.yardım ------------------
-    if (command === 'yardım' || command === 'help') {
+    // ------------------ M.avatar ------------------
+    if (command === 'avatar') {
+        const target = message.mentions.users.first() || message.author;
+        const avatarUrl = target.displayAvatarURL({ dynamic: true, size: 1024 });
+
         const embed = new EmbedBuilder()
-            .setTitle('🛠️ Mekan Bot - Komut Listesi')
-            .setColor('#2F3136')
-            .setDescription(`Tüm komutlar **${PREFIX}** ön eki ile çalışır.`)
+            .setTitle(`🖼️ ${target.username} Profil Resmi`)
+            .setColor('#5865F2')
+            .setImage(avatarUrl)
+            .setDescription(`[Resmi İndir](${avatarUrl})`);
+
+        return message.reply({ embeds: [embed] });
+    }
+
+    // ------------------ M.banner ------------------
+    if (command === 'banner') {
+        const target = message.mentions.users.first() || message.author;
+        const fetchedUser = await client.users.fetch(target.id, { force: true });
+
+        if (!fetchedUser.banner) {
+            return message.reply('❌ Bu kullanıcının ayarlanmış bir profil afişi (banner) yok.');
+        }
+
+        const bannerUrl = fetchedUser.bannerURL({ dynamic: true, size: 1024 });
+        const embed = new EmbedBuilder()
+            .setTitle(`🎨 ${target.username} Banner Resmi`)
+            .setColor('#5865F2')
+            .setImage(bannerUrl)
+            .setDescription(`[Resmi İndir](${bannerUrl})`);
+
+        return message.reply({ embeds: [embed] });
+    }
+
+    // ------------------ M.profil ------------------
+    if (command === 'profil') {
+        const target = message.mentions.members.first() || message.member;
+        const roles = target.roles.cache.filter(r => r.name !== '@everyone').map(r => r).join(', ') || 'Yok';
+
+        const embed = new EmbedBuilder()
+            .setTitle(`👤 ${target.user.username} Kullanıcı Profili`)
+            .setColor('#5865F2')
+            .setThumbnail(target.user.displayAvatarURL({ dynamic: true }))
             .addFields(
-                { name: '✨ Genel Komutlar', value: '`M.xp` - XP ve seviyenizi gösterir.\n`M.afk [sebep]` - AFK moduna geçmenizi sağlar.\n`M.ping` - Botun gecikme süresini gösterir.' },
-                { name: '🛡️ Moderasyon Komutları', value: '`M.ban @kullanıcı [sebep]` - Kullanıcıyı yasaklar.\n`M.mute @kullanıcı [süre(1m/1h/1d)] [sebep]` - Kullanıcıyı susturur.\n`M.unmute @kullanıcı` - Mute kaldırır.\n`M.uyar @kullanıcı [sebep]` - Kullanıcıya uyarı verir.\n`M.uyarılar @kullanıcı` - Uyarılara bakar.' }
+                { name: '🏷️ Kullanıcı Adı', value: target.user.tag, inline: true },
+                { name: '🆔 ID', value: target.user.id, inline: true },
+                { name: '📅 Discord Katılım', value: `<t:${Math.floor(target.user.createdTimestamp / 1000)}:R>`, inline: false },
+                { name: '📥 Sunucuya Katılım', value: `<t:${Math.floor(target.joinedTimestamp / 1000)}:R>`, inline: false },
+                { name: '📜 Roller', value: roles, inline: false }
             );
 
         return message.reply({ embeds: [embed] });
+    }
+
+    // ------------------ M.sunucubilgi ------------------
+    if (command === 'sunucubilgi' || command === 'serverinfo') {
+        const { guild } = message;
+        const embed = new EmbedBuilder()
+            .setTitle(`🏰 ${guild.name} Sunucu Bilgileri`)
+            .setColor('#5865F2')
+            .setThumbnail(guild.iconURL({ dynamic: true }))
+            .addFields(
+                { name: '👑 Sunucu Sahibi', value: `<@${guild.ownerId}>`, inline: true },
+                { name: '👥 Toplam Üye', value: `**${guild.memberCount}**`, inline: true },
+                { name: '💬 Kanal Sayısı', value: `**${guild.channels.cache.size}**`, inline: true },
+                { name: '📅 Kuruluş Tarihi', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: false }
+            );
+
+        return message.reply({ embeds: [embed] });
+    }
+
+    // ------------------ M.sil ------------------
+    if (command === 'sil' || command === 'clear') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+            return message.reply('❌ Bu komut için **Mesajları Yönet** yetkiniz olması gerekir.');
+        }
+
+        const amount = parseInt(args[0]);
+        if (isNaN(amount) || amount < 1 || amount > 100) {
+            return message.reply('❌ Lütfen 1 ile 100 arasında silinecek bir mesaj sayısı girin.');
+        }
+
+        await message.channel.bulkDelete(amount, true).catch(err => {
+            return message.reply('❌ 14 günden eski mesajlar silinemez.');
+        });
+
+        return message.channel.send(`🧹 **${amount}** adet mesaj başarıyla silindi.`).then(msg => {
+            setTimeout(() => msg.delete().catch(() => {}), 4000);
+        });
+    }
+
+    // ------------------ M.yavaşmod ------------------
+    if (command === 'yavaşmod' || command === 'slowmode') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+            return message.reply('❌ Bu komut için **Kanalları Yönet** yetkiniz olmalı.');
+        }
+
+        const seconds = parseInt(args[0]);
+        if (isNaN(seconds) || seconds < 0) {
+            return message.reply('❌ Lütfen saniye cinsinden geçerli bir sayı girin (Kapatmak için `0`).');
+        }
+
+        await message.channel.setRateLimitPerUser(seconds);
+        if (seconds === 0) {
+            return message.reply('🚀 Kanaldaki yavaş mod kaldırıldı.');
+        }
+        return message.reply(`⏱️ Kanalın yavaş modu **${seconds}** saniye olarak ayarlandı.`);
+    }
+
+    // ------------------ M.kick ------------------
+    if (command === 'kick') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
+            return message.reply('❌ Bu komutu kullanmak için **Üyeleri At** yetkisine sahip olmalısınız.');
+        }
+
+        const member = message.mentions.members.first();
+        if (!member) return message.reply('❌ Lütfen sunucudan atılacak kullanıcıyı etiketleyin.');
+        if (!member.kickable) return message.reply('❌ Bu kullanıcıyı sunucudan atmak için botun yetkisi yetersiz.');
+
+        const reason = args.slice(1).join(' ') || 'Sebep belirtilmedi.';
+        await member.kick(reason);
+        return message.reply(`🚪 **${member.user.tag}** sunucudan atıldı. Sebep: *${reason}*`);
     }
 
     // ------------------ M.ban ------------------
@@ -151,6 +260,23 @@ client.on('messageCreate', async (message) => {
         return message.reply(`✅ **${member.user.tag}** sunucudan yasaklandı. Sebep: *${reason}*`);
     }
 
+    // ------------------ M.unban ------------------
+    if (command === 'unban') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+            return message.reply('❌ Bu komut için **Üyeleri Yasakla** yetkisine sahip olmalısınız.');
+        }
+
+        const userId = args[0];
+        if (!userId) return message.reply('❌ Lütfen banı kaldırılacak kullanıcının **ID numarasını** girin. Örnek: `M.unban 123456789012345678`');
+
+        try {
+            await message.guild.members.unban(userId);
+            return message.reply(`🔓 **${userId}** ID'li kullanıcının yasağı kaldırıldı.`);
+        } catch (err) {
+            return message.reply('❌ Bu ID değerine sahip yasaklı bir kullanıcı bulunamadı.');
+        }
+    }
+
     // ------------------ M.mute ------------------
     if (command === 'mute') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
@@ -165,18 +291,17 @@ client.on('messageCreate', async (message) => {
         
         const durationMs = parseDuration(durationInput);
         if (!durationMs) {
-            return message.reply('❌ Geçersiz süre formatı! Örnek kullanımlar: `1m` (1 dakika), `2h` (2 saat), `1d` (1 gün)');
+            return message.reply('❌ Geçersiz süre formatı! Örnek: `1m` (1dk), `2h` (2saat), `1d` (1gün)');
         }
 
         if (!member.moderatable) {
-            return message.reply('❌ Bu kullanıcıyı susturamıyorum! Bot rolünün bu kullanıcının rolünden **daha üstte** olduğundan emin ol.');
+            return message.reply('❌ Bu kullanıcıyı susturamıyorum! Bot rolünü kullanıcının rolünün **üstüne** taşıyın.');
         }
 
         try {
             await member.timeout(durationMs, reason);
             return message.reply(`🔇 **${member.user.tag}**, **${durationInput}** boyunca susturuldu. Sebep: *${reason}*`);
         } catch (err) {
-            console.error('Mute hatası:', err);
             return message.reply('❌ Kullanıcı susturulurken bir hata oluştu.');
         }
     }
@@ -231,6 +356,20 @@ client.on('messageCreate', async (message) => {
             .setTitle(`⚠️ ${user.username} - Uyarı Geçmişi`)
             .setColor('#FF0000')
             .setDescription(warnList);
+
+        return message.reply({ embeds: [embed] });
+    }
+
+    // ------------------ M.yardım ------------------
+    if (command === 'yardım' || command === 'help') {
+        const embed = new EmbedBuilder()
+            .setTitle('🛠️ Mekan Bot - Komut Listesi')
+            .setColor('#2F3136')
+            .setDescription(`Tüm komutlar **${PREFIX}** ön eki ile çalışır.`)
+            .addFields(
+                { name: '✨ Genel & Profil', value: '`M.xp` - XP durumunuzu gösterir.\n`M.afk [sebep]` - AFK kalmanızı sağlar.\n`M.profil [@kullanıcı]` - Kullanıcı profil detayları.\n`M.avatar [@kullanıcı]` - Profil resmini büyük açar.\n`M.banner [@kullanıcı]` - Profil afişini gösterir.\n`M.sunucubilgi` - Sunucu istatistikleri.' },
+                { name: '🛡️ Moderasyon & Yönetim', value: '`M.sil [sayı]` - 1-100 arası mesaj siler.\n`M.kick @kullanıcı` - Üyeyi sunucudan atar.\n`M.ban @kullanıcı` - Üyeyi yasaklar.\n`M.unban [ID]` - Yasaklanan üyenin banını açar.\n`M.mute @kullanıcı [1m/1h]` - Susturur.\n`M.unmute @kullanıcı` - Susturmayı kaldırır.\n`M.yavaşmod [saniye]` - Kanala yavaş mod koyar.\n`M.uyar @kullanıcı` - Uyarı verir.\n`M.uyarılar @kullanıcı` - Uyarı geçmişi.' }
+            );
 
         return message.reply({ embeds: [embed] });
     }
