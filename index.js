@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require('discord.js');
 const express = require('express');
 
-// 7/24 Açık Kalma İçin Web Sunucusu (Render / UptimeRobot İçin)
+// 7/24 Açık Kalma İçin Web Sunucusu
 const app = express();
 app.get('/', (req, res) => res.send('Mekan Bot 7/24 Aktif!'));
 app.listen(3000, () => console.log('🌐 Web sunucusu 3000 portunda dinleniyor.'));
@@ -18,7 +18,8 @@ const client = new Client({
 
 // Bot Ayarları
 const PREFIX = 'M.';
-const TOKEN = 'MTU0ODY0NzkyNTA0MTg1NjYyMw.GsSDn9.hVYWb_RCmQtK-rhaV-euhLCZoSDrE9Xn0Q34XQ';
+// Token'ı Render üzerindeki gizli kasadan (Environment) çeker
+const TOKEN = process.env.TOKEN;
 
 // Geçici Veri Depoları
 const xpData = new Map();
