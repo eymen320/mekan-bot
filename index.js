@@ -203,12 +203,16 @@ client.on('messageCreate', async (message) => {
             return message.reply('❌ Lütfen 1 ile 100 arasında silinecek bir mesaj sayısı girin.');
         }
 
+        // Kullanıcının attığı "M.sil" komut mesajını siler
+        await message.delete().catch(() => {});
+
+        // İstenen sayıdaki eski mesajları siler
         await message.channel.bulkDelete(amount, true).catch(err => {
-            return message.reply('❌ 14 günden eski mesajlar silinemez.');
+            return message.channel.send('❌ 14 günden eski mesajlar silinemez.');
         });
 
         return message.channel.send(`🧹 **${amount}** adet mesaj başarıyla silindi.`).then(msg => {
-            setTimeout(() => msg.delete().catch(() => {}), 4000);
+            setTimeout(() => msg.delete().catch(() => {}), 3000);
         });
     }
 
