@@ -18,12 +18,30 @@ const client = new Client({
 
 // Bot Ayarları
 const PREFIX = 'M.';
-// Token'ı Render üzerindeki gizli kasadan (Environment) çeker
 const TOKEN = process.env.TOKEN;
 
 // Geçici Veri Depoları
 const xpData = new Map();
 const warnings = new Map();
+const afkData = new Map();
+
+// İngilizce Süre Dönüştürücü Fonksiyon (1m, 1h, 1d, 30s)
+function parseDuration(timeStr) {
+    if (!timeStr) return null;
+    const match = timeStr.match(/^(\d+)([smhd])$/i);
+    if (!match) return null;
+
+    const value = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+
+    switch (unit) {
+        case 's': return value * 1000;
+        case 'm': return value * 60 * 1000;
+        case 'h': return value * 60 * 60 * 1000;
+        case 'd': return value * 24 * 60 * 60 * 1000;
+        default: return null;
+    }
+}
 
 client.once('ready', () => {
     console.log(`🤖 Mekan botu başarıyla aktif oldu! Giriş yapılan hesap: ${client.user.tag}`);
@@ -48,6 +66,23 @@ function addXP(userId, amount) {
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
+    // --- AFK KONTROLLERİ ---
+    if (afkData.has(message.author.id)) {
+        afkData.delete(message.author.id);
+        message.reply(`👋 Hoş geldin **${message.author.username}**, AFK modundan çıkarıldın!`).then(msg => {
+            setTimeout(() => msg.delete().catch(() => {}), 5000);
+        });
+    }
+
+    if (message.mentions.users.size > 0) {
+        message.mentions.users.forEach(user => {
+            if (afkData.has(user.id)) {
+                const info = afkData.get(user.id);
+                message.reply(`💤 **${user.username}** şu anda AFK!\n📝 **Sebep:** ${info.reason}\n⏰ **AFK Olma Zamanı:** <t:${Math.floor(info.timestamp / 1000)}:R>`);
+            }
+        });
+    }
+
     // Her mesaj gönderildiğinde XP kazandır
     const randomXP = Math.floor(Math.random() * 11) + 5;
     addXP(message.author.id, randomXP);
@@ -56,6 +91,17 @@ client.on('messageCreate', async (message) => {
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
+
+    // ------------------ M.afk ------------------
+    if (command === 'afk') {
+        const reason = args.join(' ') || 'Sebep belirtilmedi.';
+        afkData.set(message.author.id, {
+            reason: reason,
+            timestamp: Date.now()
+        });
+
+        return message.reply(`💤 Başarıyla AFK moduna geçtin!\n📝 **Sebep:** ${reason}\n*Mesaj yazdığında AFK modun otomatik kapanacak.*`);
+    }
 
     // ------------------ M.xp ------------------
     if (command === 'xp' || command === 'seviye') {
@@ -83,8 +129,8 @@ client.on('messageCreate', async (message) => {
             .setColor('#2F3136')
             .setDescription(`Tüm komutlar **${PREFIX}** ön eki ile çalışır.`)
             .addFields(
-                { name: '✨ Genel Komutlar', value: '`M.xp` - XP ve seviyenizi gösterir.\n`M.ping` - Botun gecikme süresini gösterir.' },
-                { name: '🛡️ Moderasyon Komutları', value: '`M.ban @kullanıcı [sebep]` - Kullanıcıyı yasaklar.\n`M.mute @kullanıcı [süre(dk)] [sebep]` - Kullanıcıyı susturur.\n`M.unmute @kullanıcı` - Mute kaldırır.\n`M.uyar @kullanıcı [sebep]` - Kullanıcıya uyarı verir.\n`M.uyarılar @kullanıcı` - Uyarılara bakar.' }
+                { name: '✨ Genel Komutlar', value: '`M.xp` - XP ve seviyenizi gösterir.\n`M.afk [sebep]` - AFK moduna geçmenizi sağlar.\n`M.ping` - Botun gecikme süresini gösterir.' },
+                { name: '🛡️ Moderasyon Komutları', value: '`M.ban @kullanıcı [sebep]` - Kullanıcıyı yasaklar.\n`M.mute @kullanıcı [süre(1m/1h/1d)] [sebep]` - Kullanıcıyı susturur.\n`M.unmute @kullanıcı` - Mute kaldırır.\n`M.uyar @kullanıcı [sebep]` - Kullanıcıya uyarı verir.\n`M.uyarılar @kullanıcı` - Uyarılara bakar.' }
             );
 
         return message.reply({ embeds: [embed] });
@@ -112,16 +158,25 @@ client.on('messageCreate', async (message) => {
         }
 
         const member = message.mentions.members.first();
-        const duration = parseInt(args[1]);
+        const durationInput = args[1];
         const reason = args.slice(2).join(' ') || 'Sebep belirtilmedi.';
 
-        if (!member) return message.reply('❌ Lütfen bir kullanıcı etiketleyin. Örnek: `M.mute @kullanıcı 10 Kural ihlali`');
-        if (!duration || isNaN(duration)) return message.reply('❌ Lütfen dakika cinsinden geçerli bir süre girin.');
+        if (!member) return message.reply('❌ Lütfen bir kullanıcı etiketleyin. Örnek: `M.mute @kullanıcı 10m Kural ihlali`');
+        
+        const durationMs = parseDuration(durationInput);
+        if (!durationMs) {
+            return message.reply('❌ Geçersiz süre formatı! Örnek kullanımlar: `1m` (1 dakika), `2h` (2 saat), `1d` (1 gün)');
+        }
+
+        if (!member.moderatable) {
+            return message.reply('❌ Bu kullanıcıyı susturamıyorum! Bot rolünün bu kullanıcının rolünden **daha üstte** olduğundan emin ol.');
+        }
 
         try {
-            await member.timeout(duration * 60 * 1000, reason);
-            return message.reply(`🔇 **${member.user.tag}**, **${duration}** dakika boyunca susturuldu. Sebep: *${reason}*`);
+            await member.timeout(durationMs, reason);
+            return message.reply(`🔇 **${member.user.tag}**, **${durationInput}** boyunca susturuldu. Sebep: *${reason}*`);
         } catch (err) {
+            console.error('Mute hatası:', err);
             return message.reply('❌ Kullanıcı susturulurken bir hata oluştu.');
         }
     }
