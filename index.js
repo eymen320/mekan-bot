@@ -23,7 +23,6 @@ const TOKEN = process.env.TOKEN;
 
 // Geçici Veri Depoları
 const xpData = new Map();
-const warnings = new Map();
 const afkData = new Map();
 
 // Sistem Ayarları
@@ -36,6 +35,19 @@ const sayacSettings = new Map();
 
 // Yasaklı Küfür Listesi
 const kufurList = ['amk', 'aq', 'amq', 'oç', 'oc', 'piç', 'pic', 'sik', 'yarrak', 'yarak', 'orospu', 'ibne', 'göt'];
+
+// 8ball Yanıt Listesi
+const ballAnswers = [
+    "Kesinlikle evet! 🎯",
+    "Görünüşe göre öyle. 👍",
+    "Şüphesiz! ✨",
+    "Tam olarak anlayamadım, tekrar sor. 🔄",
+    "Daha sonra tekrar sor. ⏳",
+    "Şimdi söylemesem daha iyi. 🤐",
+    "Pek sanmıyorum. ❌",
+    "Yanıtım hayır. 👎",
+    "Büyük ihtimalle hayır. 📉"
+];
 
 // Süre Dönüştürücü Fonksiyon
 function parseDuration(timeStr) {
@@ -199,7 +211,136 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // ------------------ M.harici-bot (HARİCİ BOTLARI KAPAT/AÇ) ------------------
+    // ------------------ EĞLENCE & KULLANICI KOMUTLARI ------------------
+    if (command === 'yazıtura' || command === 'yazi-tura') {
+        const outcome = Math.random() < 0.5 ? '🪙 **YAZI** geldi!' : '🪙 **TURA** geldi!';
+        return message.reply(outcome);
+    }
+
+    if (command === 'zar') {
+        const roll = Math.floor(Math.random() * 6) + 1;
+        return message.reply(`🎲 Attığın zar: **${roll}**`);
+    }
+
+    if (command === '8ball') {
+        const question = args.join(' ');
+        if (!question) return message.reply('❌ Lütfen sihirlı küreye sormak istediğin bir soru gir. Örnek: `M.8ball Bugün güzel bir gün mü?`');
+        const randomAnswer = ballAnswers[Math.floor(Math.random() * ballAnswers.length)];
+        const embed = new EmbedBuilder()
+            .setTitle('🎱 Sihirli 8Ball')
+            .setColor('#9B59B6')
+            .addFields(
+                { name: '❓ Soru:', value: question },
+                { name: '💬 Cevap:', value: randomAnswer }
+            );
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'xp' || command === 'level') {
+        const user = message.mentions.users.first() || message.author;
+        const data = xpData.get(user.id) || { xp: 0, level: 1 };
+        const nextXp = data.level * 100;
+        
+        const embed = new EmbedBuilder()
+            .setTitle(`📊 ${user.username} - Level ve XP Durumu`)
+            .setColor('#F1C40F')
+            .setThumbnail(user.displayAvatarURL({ dynamic: true }))
+            .addFields(
+                { name: '⭐ Seviye (Level):', value: `**${data.level}**`, inline: true },
+                { name: '✨ XP:', value: `**${data.xp} / ${nextXp}**`, inline: true }
+            );
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'afk') {
+        const reason = args.join(' ') || 'Sebep belirtilmedi.';
+        afkData.set(message.author.id, { reason, timestamp: Date.now() });
+        return message.reply(`💤 **${message.author.username}**, başarıyla AFK moduna geçtin.\n📝 **Sebep:** ${reason}`);
+    }
+
+    if (command === 'avatar') {
+        const user = message.mentions.users.first() || message.author;
+        const avatarUrl = user.displayAvatarURL({ dynamic: true, size: 1024 });
+        const embed = new EmbedBuilder()
+            .setTitle(`🖼️ ${user.username} kullanıcısının avatarı`)
+            .setColor('#3498DB')
+            .setImage(avatarUrl);
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'banner') {
+        const user = message.mentions.users.first() || message.author;
+        try {
+            const fetchedUser = await client.users.fetch(user.id, { force: true });
+            const bannerUrl = fetchedUser.bannerURL({ dynamic: true, size: 1024 });
+
+            if (!bannerUrl) {
+                return message.reply(`❌ **${user.username}** kullanıcısının herhangi bir bannerı bulunmuyor.`);
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🎨 ${user.username} kullanıcısının bannerı`)
+                .setColor('#E91E63')
+                .setImage(bannerUrl);
+            return message.reply({ embeds: [embed] });
+        } catch (err) {
+            return message.reply('❌ Banner alınırken bir hata oluştu.');
+        }
+    }
+
+    if (command === 'profil') {
+        const targetMember = message.mentions.members.first() || message.member;
+        const targetUser = targetMember.user;
+        const data = xpData.get(targetUser.id) || { xp: 0, level: 1 };
+
+        const embed = new EmbedBuilder()
+            .setTitle(`👤 ${targetUser.username} - Kullanıcı Profili`)
+            .setColor('#7289DA')
+            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 256 }))
+            .addFields(
+                { name: '🆔 ID:', value: targetUser.id, inline: true },
+                { name: '📅 Sunucuya Katılım:', value: `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:R>`, inline: true },
+                { name: '🚀 Discord Katılım:', value: `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>`, inline: true },
+                { name: '⭐ Seviye / XP:', value: `Level **${data.level}** (${data.xp} XP)`, inline: true }
+            );
+        return message.reply({ embeds: [embed] });
+    }
+
+    // ------------------ M.hoşgeldin-kanal ------------------
+    if (command === 'hoşgeldin-kanal') {
+        if (!isStaff) return message.reply('❌ Yetkiniz yetersiz.');
+
+        const option = args[0]?.toLowerCase();
+        if (option === 'sıfırla' || option === 'kapat') {
+            welcomeChannelSettings.delete(guildId);
+            return message.reply('🔄 **Hoş geldin kanalı başarıyla sıfırlandı ve sistem kapatıldı.**');
+        }
+
+        const ch = message.mentions.channels.first();
+        if (!ch) return message.reply('❌ Lütfen bir kanal etiketleyin veya kapatmak için `M.hoşgeldin-kanal sıfırla` yazın.');
+        
+        welcomeChannelSettings.set(guildId, ch.id);
+        return message.reply(`👋 Hoş geldin kanalı ${ch} olarak ayarlandı.`);
+    }
+
+    // ------------------ M.sayaç ------------------
+    if (command === 'sayaç') {
+        if (!isStaff) return message.reply('❌ Yetkiniz yok.');
+
+        const option = args[0]?.toLowerCase();
+        if (option === 'sıfırla' || option === 'kapat') {
+            sayacSettings.delete(guildId);
+            return message.reply('🔄 **Sayaç sistemi sıfırlandı ve kapatıldı.**');
+        }
+
+        const target = parseInt(args[0]);
+        const ch = message.mentions.channels.first();
+        if (isNaN(target) || !ch) return message.reply('❌ Kullanım: `M.sayaç 100 #kanal` veya `M.sayaç sıfırla`');
+        sayacSettings.set(guildId, { target, channelId: ch.id });
+        return message.reply(`📊 Sayaç **${target}** olarak ayarlandı.`);
+    }
+
+    // ------------------ M.harici-bot ------------------
     if (command === 'harici-bot' || command === 'haricibot') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
             return message.reply('❌ Bu komut için **Kanalları Yönet** yetkiniz olması gerekir.');
@@ -236,7 +377,7 @@ client.on('messageCreate', async (message) => {
 
         } catch (err) {
             console.error(err);
-            return message.reply('❌ İşlem sırasında bir hata oluştu. Botun **Kanalları Yönet** yetkisi olduğundan emin olun.');
+            return message.reply('❌ İşlem sırasında bir hata oluştu.');
         }
     }
 
@@ -256,7 +397,7 @@ client.on('messageCreate', async (message) => {
 
         const botMember = message.guild.members.me;
         if (botMember.roles.highest.position <= role.position) {
-            return message.reply(`❌ **Hata:** Botun rolü, vermeye çalıştığınız **${role.name}** rolünün **ALTINDA**! Roller kısmından Bot rolünü bu rolün üstüne sürükleyin.`);
+            return message.reply(`❌ **Hata:** Botun rolü, vermeye çalıştığınız **${role.name}** rolünün **ALTINDA**!`);
         }
 
         otoRolSettings.set(guildId, role.id);
@@ -350,24 +491,6 @@ client.on('messageCreate', async (message) => {
         if (st === 'kapat') { linkSettings.set(guildId, false); return message.reply('❌ Link engeli kapatıldı!'); }
     }
 
-    // ------------------ M.hoşgeldin-kanal & M.sayaç ------------------
-    if (command === 'hoşgeldin-kanal') {
-        if (!isStaff) return message.reply('❌ Yetkiniz yok.');
-        const ch = message.mentions.channels.first();
-        if (!ch) return message.reply('❌ Kanal etiketleyin.');
-        welcomeChannelSettings.set(guildId, ch.id);
-        return message.reply(`👋 Hoş geldin kanalı ${ch} yapıldı.`);
-    }
-
-    if (command === 'sayaç') {
-        if (!isStaff) return message.reply('❌ Yetkiniz yok.');
-        const target = parseInt(args[0]);
-        const ch = message.mentions.channels.first();
-        if (isNaN(target) || !ch) return message.reply('❌ Kullanım: `M.sayaç 100 #kanal`');
-        sayacSettings.set(guildId, { target, channelId: ch.id });
-        return message.reply(`📊 Sayaç **${target}** olarak ayarlandı.`);
-    }
-
     // ------------------ DİĞER KOMUTLAR ------------------
     if (command === 'sil') {
         if (!isStaff) return message.reply('❌ Yetkiniz yok.');
@@ -382,9 +505,10 @@ client.on('messageCreate', async (message) => {
             .setTitle('🛠️ Mekan Bot Komutları')
             .setColor('#5865F2')
             .addFields(
-                { name: '🤖 Bot Yönetimi', value: '`M.harici-bot kapat` - Diğer botların kanala yazmasını engeller.\n`M.harici-bot aç` - Diğer botların iznini tekrar açar.' },
+                { name: '🎉 Eğlence & Kullanıcı', value: '`M.yazıtura` - Yazı-tura atar.\n`M.zar` - Zar atar.\n`M.8ball [soru]` - Sihirli küreye soru sorar.\n`M.xp` - XP durumunu gösterir.\n`M.afk [sebep]` - AFK moduna geçer.\n`M.avatar [@kullanıcı]` - Avatarı gösterir.\n`M.banner [@kullanıcı]` - Bannerı gösterir.\n`M.profil [@kullanıcı]` - Kullanıcı profilini gösterir.' },
+                { name: '🤖 Bot Yönetimi', value: '`M.harici-bot kapat` - Diğer botların mesaj atmasını engeller.\n`M.harici-bot aç` - Diğer botların mesaj iznini açar.' },
                 { name: '🛡️ Moderasyon', value: '`M.mute @kullanıcı 10m` | `M.unmute @kullanıcı`\n`M.ban @kullanıcı` | `M.unban [ID]`\n`M.kick @kullanıcı` | `M.sil [sayı]`' },
-                { name: '⚙️ Sistemler', value: '`M.oto-rol @rol` | `M.sa-as aç/kapat`\n`M.küfür-engel aç/kapat` | `M.link-engel aç/kapat`\n`M.hoşgeldin-kanal #kanal` | `M.sayaç [hedef] #kanal`' }
+                { name: '⚙️ Sistemler', value: '`M.oto-rol @rol` (Sıfırlama: `M.oto-rol sıfırla`)\n`M.hoşgeldin-kanal #kanal` (Sıfırlama: `M.hoşgeldin-kanal sıfırla`)\n`M.sayaç [hedef] #kanal` (Sıfırlama: `M.sayaç sıfırla`)\n`M.sa-as aç/kapat` | `M.küfür-engel aç/kapat` | `M.link-engel aç/kapat`' }
             );
         return message.reply({ embeds: [embed] });
     }
