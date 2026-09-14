@@ -1,4 +1,12 @@
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require('discord.js');
+const { 
+    Client, 
+    GatewayIntentBits, 
+    EmbedBuilder, 
+    PermissionsBitField, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle 
+} = require('discord.js');
 const express = require('express');
 
 // 7/24 Açık Kalma İçin Web Sunucusu
@@ -33,6 +41,18 @@ const otoRolSettings = new Map();
 const welcomeChannelSettings = new Map();
 const sayacSettings = new Map();
 
+// Renk Listesi Tanımları
+const COLOR_ROLES = [
+    { id: 'color_red', name: '🎨 Kırmızı', hex: '#E74C3C', label: 'Kırmızı', style: ButtonStyle.Danger },
+    { id: 'color_blue', name: '🎨 Mavi', hex: '#3498DB', label: 'Mavi', style: ButtonStyle.Primary },
+    { id: 'color_green', name: '🎨 Yeşil', hex: '#2ECC71', label: 'Yeşil', style: ButtonStyle.Success },
+    { id: 'color_yellow', name: '🎨 Sarı', hex: '#F1C40F', label: 'Sarı', style: ButtonStyle.Secondary },
+    { id: 'color_purple', name: '🎨 Mor', hex: '#9B59B6', label: 'Mor', style: ButtonStyle.Secondary },
+    { id: 'color_pink', name: '🎨 Pembe', hex: '#E91E63', label: 'Pembe', style: ButtonStyle.Secondary },
+    { id: 'color_orange', name: '🎨 Turuncu', hex: '#E67E22', label: 'Turuncu', style: ButtonStyle.Secondary },
+    { id: 'color_black', name: '🎨 Siyah', hex: '#34495E', label: 'Siyah', style: ButtonStyle.Secondary }
+];
+
 // Yasaklı Küfür Listesi
 const kufurList = ['amk', 'aq', 'amq', 'oç', 'oc', 'piç', 'pic', 'sik', 'yarrak', 'yarak', 'orospu', 'ibne', 'göt', 'sikim', 'sikik', 'yarram', 'sikem', 'orospucocugu'];
 
@@ -49,7 +69,6 @@ const ballAnswers = [
     "Büyük ihtimalle hayır. 📉"
 ];
 
-// Süre Dönüştürücü Fonksiyon
 function parseDuration(timeStr) {
     if (!timeStr) return null;
     const match = timeStr.match(/^(\d+)([smhd])$/i);
@@ -152,6 +171,63 @@ client.on('guildMemberRemove', async (member) => {
     }
 });
 
+// BUTON TIKLAMA DİNLENMESİ (RENK ROLÜ SİSTEMİ)
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+
+    const { customId, guild, member } = interaction;
+
+    if (customId.startsWith('color_') || customId === 'reset_color') {
+        await interaction.deferReply({ ephemeral: true });
+
+        const botMember = await guild.members.fetchMe();
+        if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+            return interaction.editReply({ content: '❌ Botun **Rolleri Yönet** yetkisi bulunmuyor!' });
+        }
+
+        // Kullanıcıdan mevcut tüm renk rollerini kaldır
+        const colorRoleNames = COLOR_ROLES.map(c => c.name);
+        const rolesToRemove = member.roles.cache.filter(role => colorRoleNames.includes(role.name));
+        
+        if (rolesToRemove.size > 0) {
+            await member.roles.remove(rolesToRemove).catch(() => {});
+        }
+
+        if (customId === 'reset_color') {
+            return interaction.editReply({ content: '🔄 İsim renginiz başarıyla sıfırlandı!' });
+        }
+
+        const selectedColor = COLOR_ROLES.find(c => c.id === customId);
+        if (!selectedColor) return interaction.editReply({ content: '❌ Geçersiz renk seçimi.' });
+
+        // Sunucuda renk rolü var mı kontrol et, yoksa otomatik oluştur
+        let targetRole = guild.roles.cache.find(r => r.name === selectedColor.name);
+        if (!targetRole) {
+            try {
+                targetRole = await guild.roles.create({
+                    name: selectedColor.name,
+                    color: selectedColor.hex,
+                    reason: 'Mekan Bot Otomatik Renk Rolü Sistem'
+                });
+            } catch (err) {
+                return interaction.editReply({ content: '❌ Renk rolü oluşturulurken bir hata oluştu. Botun rolünün en üstte olduğundan emin olun.' });
+            }
+        }
+
+        // Botun rol seviyesi kontrolü
+        if (botMember.roles.highest.position <= targetRole.position) {
+            return interaction.editReply({ content: `❌ Botun rolü, verilmek istenen **${targetRole.name}** rolünün altında olduğu için bu rol verilemiyor!` });
+        }
+
+        try {
+            await member.roles.add(targetRole);
+            return interaction.editReply({ content: `🎨 İsminizin rengi başarıyla **${selectedColor.label}** olarak değiştirildi!` });
+        } catch (err) {
+            return interaction.editReply({ content: '❌ Rol verilirken bir hata oluştu.' });
+        }
+    }
+});
+
 // MESAJ DİNLENMESİ
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
@@ -159,7 +235,7 @@ client.on('messageCreate', async (message) => {
     const guildId = message.guild.id;
     const isStaff = message.member.permissions.has(PermissionsBitField.Flags.ManageMessages);
 
-    // KÜFÜR ENGEL (Düzeltilmiş Türkçe Uyumlu Mantık)
+    // KÜFÜR ENGEL
     if (kufurSettings.get(guildId) && !isStaff) {
         const contentLower = message.content.toLowerCase();
         const hasKufur = kufurList.some(word => contentLower.includes(word));
@@ -207,7 +283,7 @@ client.on('messageCreate', async (message) => {
         });
     }
 
-    // LEVEL VE XP SİSTEMİ (Level Atlama Mesajı Dahil)
+    // LEVEL VE XP SİSTEMİ
     const { userData, leveledUp } = addXP(message.author.id, Math.floor(Math.random() * 11) + 5);
     if (leveledUp) {
         const levelEmbed = new EmbedBuilder()
@@ -223,7 +299,33 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // ------------------ YENİ EKLENEN SİSTEM & İSTATİSTİK KOMUTLARI ------------------
+    // ------------------ M.renk (RENK SEÇİM SİSTEMİ) ------------------
+    if (command === 'renk' || command === 'renkler') {
+        const embed = new EmbedBuilder()
+            .setTitle('🎨 Kullanıcı İsim Rengi Seçimi')
+            .setColor('#9B59B6')
+            .setDescription('Aşağıdaki butonlara tıklayarak sunucudaki kullanıcı adınızın rengini değiştirebilirsiniz!')
+            .setFooter({ text: 'Renk kaldırmak için "Rengi Sıfırla" butonunu kullanabilirsiniz.' });
+
+        const row1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('color_red').setLabel('Kırmızı').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('color_blue').setLabel('Mavi').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('color_green').setLabel('Yeşil').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('color_yellow').setLabel('Sarı').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('color_purple').setLabel('Mor').setStyle(ButtonStyle.Secondary)
+        );
+
+        const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('color_pink').setLabel('Pembe').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('color_orange').setLabel('Turuncu').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('color_black').setLabel('Siyah').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('reset_color').setLabel('Rengi Sıfırla').setStyle(ButtonStyle.Danger)
+        );
+
+        return message.reply({ embeds: [embed], components: [row1, row2] });
+    }
+
+    // ------------------ İSTATİSTİK VE BİLGİ KOMUTLARI ------------------
     if (command === 'istatistik' || command === 'i' || command === 'botbilgi') {
         const uptime = Math.floor(client.uptime / 1000);
         const embed = new EmbedBuilder()
@@ -369,7 +471,7 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embed] });
     }
 
-    // ------------------ M.hoşgeldin-kanal & M.sayaç ------------------
+    // ------------------ SYSTEM SETTINGS ------------------
     if (command === 'hoşgeldin-kanal') {
         if (!isStaff) return message.reply('❌ Yetkiniz yetersiz.');
 
@@ -402,7 +504,6 @@ client.on('messageCreate', async (message) => {
         return message.reply(`📊 Sayaç **${target}** olarak ayarlandı.`);
     }
 
-    // ------------------ M.harici-bot ------------------
     if (command === 'harici-bot' || command === 'haricibot') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
             return message.reply('❌ Bu komut için **Kanalları Yönet** yetkiniz olması gerekir.');
@@ -443,7 +544,6 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // ------------------ M.oto-rol ------------------
     if (command === 'oto-rol' || command === 'otorol') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
             return message.reply('❌ Bu komut için **Rolleri Yönet** yetkiniz olması gerekir.');
@@ -466,7 +566,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(`✅ **Oto-Rol başarıyla ayarlandı!** Yeni katılan üyelere **${role.name}** rolü verilecek.`);
     }
 
-    // ------------------ M.mute / M.unmute ------------------
+    // ------------------ MODERASYON ------------------
     if (command === 'mute') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) return message.reply('❌ Yetkiniz yok.');
         const member = message.mentions.members.first();
@@ -499,7 +599,6 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // ------------------ M.unban / M.ban / M.kick ------------------
     if (command === 'unban') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) return message.reply('❌ Yetkiniz yok.');
         const userId = args[0];
@@ -531,7 +630,6 @@ client.on('messageCreate', async (message) => {
         return message.reply(`🚪 **${member.user.tag}** atıldı.`);
     }
 
-    // ------------------ M.sa-as / M.küfür-engel / M.link-engel ------------------
     if (command === 'sa-as') {
         if (!isStaff) return message.reply('❌ Yetkiniz yok.');
         const st = args[0]?.toLowerCase();
@@ -553,7 +651,6 @@ client.on('messageCreate', async (message) => {
         if (st === 'kapat') { linkSettings.set(guildId, false); return message.reply('❌ Link engeli kapatıldı!'); }
     }
 
-    // ------------------ DİĞER KOMUTLAR ------------------
     if (command === 'sil') {
         if (!isStaff) return message.reply('❌ Yetkiniz yok.');
         const amount = parseInt(args[0]);
@@ -567,6 +664,7 @@ client.on('messageCreate', async (message) => {
             .setTitle('🛠️ Mekan Bot Komutları')
             .setColor('#5865F2')
             .addFields(
+                { name: '🎨 İsim Rengi', value: '`M.renk` - İsim renginizi değiştirebileceğiniz butonlu menüyü açar.' },
                 { name: '🎉 Eğlence & Kullanıcı', value: '`M.yazıtura` | `M.zar` | `M.8ball [soru]`\n`M.xp` | `M.afk [sebep]` | `M.avatar` | `M.banner` | `M.profil`' },
                 { name: '🤖 Bot & Sunucu Bilgi', value: '`M.istatistik` - Bot durumunu gösterir.\n`M.sunucu-bilgi` - Sunucu bilgilerini gösterir.\n`M.harici-bot kapat/aç` - Diğer bot mesajlarını engeller.' },
                 { name: '🛡️ Moderasyon', value: '`M.mute @kullanıcı 10m` | `M.unmute @kullanıcı`\n`M.ban @kullanıcı` | `M.unban [ID]`\n`M.kick @kullanıcı` | `M.sil [sayı]`\n`M.yavaş-mod [saniye]`' },
