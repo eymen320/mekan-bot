@@ -34,7 +34,7 @@ const welcomeChannelSettings = new Map();
 const sayacSettings = new Map();
 
 // Yasaklı Küfür Listesi
-const kufurList = ['amk', 'aq', 'amq', 'oç', 'oc', 'piç', 'pic', 'sik', 'yarrak', 'yarak', 'orospu', 'ibne', 'göt'];
+const kufurList = ['amk', 'aq', 'amq', 'oç', 'oc', 'piç', 'pic', 'sik', 'yarrak', 'yarak', 'orospu', 'ibne', 'göt', 'sikim', 'sikik', 'yarram', 'sikem', 'orospucocugu'];
 
 // 8ball Yanıt Listesi
 const ballAnswers = [
@@ -72,19 +72,22 @@ client.once('ready', () => {
     client.user.setActivity('M.yardım | Mekan Bot');
 });
 
-// XP Sistemi
+// XP ve Level Atlama Sistemi
 function addXP(userId, amount) {
     let userData = xpData.get(userId) || { xp: 0, level: 1 };
     userData.xp += amount;
     
     let nextLevelXp = userData.level * 100;
+    let leveledUp = false;
+
     if (userData.xp >= nextLevelXp) {
         userData.level += 1;
         userData.xp -= nextLevelXp;
+        leveledUp = true;
     }
     
     xpData.set(userId, userData);
-    return userData;
+    return { userData, leveledUp };
 }
 
 // OTO-ROL & KARŞILAMA SİSTEMİ
@@ -156,10 +159,10 @@ client.on('messageCreate', async (message) => {
     const guildId = message.guild.id;
     const isStaff = message.member.permissions.has(PermissionsBitField.Flags.ManageMessages);
 
-    // KÜFÜR ENGEL
+    // KÜFÜR ENGEL (Düzeltilmiş Türkçe Uyumlu Mantık)
     if (kufurSettings.get(guildId) && !isStaff) {
         const contentLower = message.content.toLowerCase();
-        const hasKufur = kufurList.some(word => new RegExp(`\\b${word}\\b`, 'i').test(contentLower));
+        const hasKufur = kufurList.some(word => contentLower.includes(word));
         if (hasKufur) {
             await message.delete().catch(() => {});
             return message.channel.send(`⚠️ ${message.author}, bu sunucuda küfürlü kelimeler kullanmak yasaktır!`).then(msg => {
@@ -204,12 +207,72 @@ client.on('messageCreate', async (message) => {
         });
     }
 
-    addXP(message.author.id, Math.floor(Math.random() * 11) + 5);
+    // LEVEL VE XP SİSTEMİ (Level Atlama Mesajı Dahil)
+    const { userData, leveledUp } = addXP(message.author.id, Math.floor(Math.random() * 11) + 5);
+    if (leveledUp) {
+        const levelEmbed = new EmbedBuilder()
+            .setTitle('🎉 Tebrikler! Level Atladın!')
+            .setColor('#F1C40F')
+            .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+            .setDescription(`Tebrikler ${message.author}! Başarıyla **Level ${userData.level}** seviyesine ulaştın! 🚀`);
+        message.channel.send({ embeds: [levelEmbed] });
+    }
 
     if (!message.content.startsWith(PREFIX)) return;
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
+
+    // ------------------ YENİ EKLENEN SİSTEM & İSTATİSTİK KOMUTLARI ------------------
+    if (command === 'istatistik' || command === 'i' || command === 'botbilgi') {
+        const uptime = Math.floor(client.uptime / 1000);
+        const embed = new EmbedBuilder()
+            .setTitle('📊 Mekan Bot İstatistikleri')
+            .setColor('#5865F2')
+            .addFields(
+                { name: '🌐 Hizmet Verilen Sunucu:', value: `${client.guilds.cache.size}`, inline: true },
+                { name: '👥 Toplam Kullanıcı:', value: `${client.users.cache.size}`, inline: true },
+                { name: '🏓 Gecikme (Ping):', value: `${client.ws.ping}ms`, inline: true },
+                { name: '💾 RAM Kullanımı:', value: `${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`, inline: true },
+                { name: '⏰ Çalışma Süresi:', value: `${Math.floor(uptime / 60)} dakika ${uptime % 60} saniye`, inline: true }
+            );
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'sunucu-bilgi' || command === 'sunucubilgi') {
+        const guild = message.guild;
+        const embed = new EmbedBuilder()
+            .setTitle(`🏰 ${guild.name} Sunucu Bilgileri`)
+            .setColor('#E74C3C')
+            .setThumbnail(guild.iconURL({ dynamic: true }))
+            .addFields(
+                { name: '🆔 Sunucu ID:', value: guild.id, inline: true },
+                { name: '👑 Sunucu Sahibi:', value: `<@${guild.ownerId}>`, inline: true },
+                { name: '👥 Üye Sayısı:', value: `${guild.memberCount}`, inline: true },
+                { name: '💬 Kanal Sayısı:', value: `${guild.channels.cache.size}`, inline: true },
+                { name: '🎭 Rol Sayısı:', value: `${guild.roles.cache.size}`, inline: true },
+                { name: '📅 Kuruluş Tarihi:', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true }
+            );
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'yavaş-mod' || command === 'yavasmod' || command === 'slowmode') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+            return message.reply('❌ Bu komut için **Kanalları Yönet** yetkiniz olması gerekir.');
+        }
+
+        const sec = parseInt(args[0]);
+        if (isNaN(sec) || sec < 0 || sec > 21600) {
+            return message.reply('❌ Lütfen 0 ile 21600 (6 saat) arasında saniye cinsinden bir sayı girin. Örnek: `M.yavaş-mod 5`');
+        }
+
+        await message.channel.setRateLimitPerUser(sec);
+        if (sec === 0) {
+            return message.reply('🔓 Kanalın yavaş modu **kapatıldı**.');
+        } else {
+            return message.reply(`⏱️ Kanal yavaş modu **${sec} saniye** olarak ayarlandı.`);
+        }
+    }
 
     // ------------------ EĞLENCE & KULLANICI KOMUTLARI ------------------
     if (command === 'yazıtura' || command === 'yazi-tura') {
@@ -224,7 +287,7 @@ client.on('messageCreate', async (message) => {
 
     if (command === '8ball') {
         const question = args.join(' ');
-        if (!question) return message.reply('❌ Lütfen sihirlı küreye sormak istediğin bir soru gir. Örnek: `M.8ball Bugün güzel bir gün mü?`');
+        if (!question) return message.reply('❌ Lütfen sihirlı küreye sormak istediğin bir soru gir.');
         const randomAnswer = ballAnswers[Math.floor(Math.random() * ballAnswers.length)];
         const embed = new EmbedBuilder()
             .setTitle('🎱 Sihirli 8Ball')
@@ -306,7 +369,7 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embed] });
     }
 
-    // ------------------ M.hoşgeldin-kanal ------------------
+    // ------------------ M.hoşgeldin-kanal & M.sayaç ------------------
     if (command === 'hoşgeldin-kanal') {
         if (!isStaff) return message.reply('❌ Yetkiniz yetersiz.');
 
@@ -323,7 +386,6 @@ client.on('messageCreate', async (message) => {
         return message.reply(`👋 Hoş geldin kanalı ${ch} olarak ayarlandı.`);
     }
 
-    // ------------------ M.sayaç ------------------
     if (command === 'sayaç') {
         if (!isStaff) return message.reply('❌ Yetkiniz yok.');
 
@@ -505,9 +567,9 @@ client.on('messageCreate', async (message) => {
             .setTitle('🛠️ Mekan Bot Komutları')
             .setColor('#5865F2')
             .addFields(
-                { name: '🎉 Eğlence & Kullanıcı', value: '`M.yazıtura` - Yazı-tura atar.\n`M.zar` - Zar atar.\n`M.8ball [soru]` - Sihirli küreye soru sorar.\n`M.xp` - XP durumunu gösterir.\n`M.afk [sebep]` - AFK moduna geçer.\n`M.avatar [@kullanıcı]` - Avatarı gösterir.\n`M.banner [@kullanıcı]` - Bannerı gösterir.\n`M.profil [@kullanıcı]` - Kullanıcı profilini gösterir.' },
-                { name: '🤖 Bot Yönetimi', value: '`M.harici-bot kapat` - Diğer botların mesaj atmasını engeller.\n`M.harici-bot aç` - Diğer botların mesaj iznini açar.' },
-                { name: '🛡️ Moderasyon', value: '`M.mute @kullanıcı 10m` | `M.unmute @kullanıcı`\n`M.ban @kullanıcı` | `M.unban [ID]`\n`M.kick @kullanıcı` | `M.sil [sayı]`' },
+                { name: '🎉 Eğlence & Kullanıcı', value: '`M.yazıtura` | `M.zar` | `M.8ball [soru]`\n`M.xp` | `M.afk [sebep]` | `M.avatar` | `M.banner` | `M.profil`' },
+                { name: '🤖 Bot & Sunucu Bilgi', value: '`M.istatistik` - Bot durumunu gösterir.\n`M.sunucu-bilgi` - Sunucu bilgilerini gösterir.\n`M.harici-bot kapat/aç` - Diğer bot mesajlarını engeller.' },
+                { name: '🛡️ Moderasyon', value: '`M.mute @kullanıcı 10m` | `M.unmute @kullanıcı`\n`M.ban @kullanıcı` | `M.unban [ID]`\n`M.kick @kullanıcı` | `M.sil [sayı]`\n`M.yavaş-mod [saniye]`' },
                 { name: '⚙️ Sistemler', value: '`M.oto-rol @rol` (Sıfırlama: `M.oto-rol sıfırla`)\n`M.hoşgeldin-kanal #kanal` (Sıfırlama: `M.hoşgeldin-kanal sıfırla`)\n`M.sayaç [hedef] #kanal` (Sıfırlama: `M.sayaç sıfırla`)\n`M.sa-as aç/kapat` | `M.küfür-engel aç/kapat` | `M.link-engel aç/kapat`' }
             );
         return message.reply({ embeds: [embed] });
