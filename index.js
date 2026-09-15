@@ -7,6 +7,8 @@ const {
     ButtonBuilder, 
     ButtonStyle 
 } = require('discord.js');
+const { Player } = require('discord-player');
+const { DefaultExtractors } = require('@discord-player/extractor');
 const express = require('express');
 
 // 7/24 Açık Kalma İçin Web Sunucusu
@@ -21,13 +23,41 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessageReactions
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
 // Bot Ayarları
 const PREFIX = 'M.';
 const TOKEN = process.env.TOKEN;
+
+// Müzik Oyuncusu (Player) Kurulumu
+const player = new Player(client);
+
+async function initPlayer() {
+    await player.extractors.loadMulti(DefaultExtractors);
+}
+initPlayer();
+
+// Müzik Etkinlik Dinleyicileri
+player.events.on('playerStart', (queue, track) => {
+    const embed = new EmbedBuilder()
+        .setTitle('🎶 Şimdi Çalıyor')
+        .setDescription(`[**${track.title}**](${track.url}) - **${track.author}**`)
+        .addFields(
+            { name: '⏱️ Süre', value: track.duration, inline: true },
+            { name: '👤 İsteyen', value: `${track.requestedBy}`, inline: true }
+        )
+        .setThumbnail(track.thumbnail)
+        .setColor('#1DB954');
+
+    queue.metadata.channel.send({ embeds: [embed] });
+});
+
+player.events.on('audioTrackAdd', (queue, track) => {
+    queue.metadata.channel.send(`✅ **${track.title}** sıraya eklendi!`);
+});
 
 // Geçici Veri Depoları
 const xpData = new Map();
@@ -185,7 +215,6 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.editReply({ content: '❌ Botun **Rolleri Yönet** yetkisi bulunmuyor!' });
         }
 
-        // Kullanıcıdan mevcut tüm renk rollerini kaldır
         const colorRoleNames = COLOR_ROLES.map(c => c.name);
         const rolesToRemove = member.roles.cache.filter(role => colorRoleNames.includes(role.name));
         
@@ -200,7 +229,6 @@ client.on('interactionCreate', async (interaction) => {
         const selectedColor = COLOR_ROLES.find(c => c.id === customId);
         if (!selectedColor) return interaction.editReply({ content: '❌ Geçersiz renk seçimi.' });
 
-        // Sunucuda renk rolü var mı kontrol et, yoksa otomatik oluştur
         let targetRole = guild.roles.cache.find(r => r.name === selectedColor.name);
         if (!targetRole) {
             try {
@@ -214,7 +242,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // Botun rol seviyesi kontrolü
         if (botMember.roles.highest.position <= targetRole.position) {
             return interaction.editReply({ content: `❌ Botun rolü, verilmek istenen **${targetRole.name}** rolünün altında olduğu için bu rol verilemiyor!` });
         }
@@ -299,6 +326,86 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
+    // ------------------ MÜZİK KOMUTLARI ------------------
+    if (command === 'çal' || command === 'play') {
+        const query = args.join(' ');
+        if (!query) return message.reply('❌ Lütfen çalmak istediğin şarkının adını veya Spotify linkini gir.');
+
+        const voiceChannel = message.member.voice.channel;
+        if (!voiceChannel) return message.reply('❌ Müzik dinlemek için önce bir ses kanalına katılmalısın!');
+
+        await message.deferReply();
+
+        try {
+            const { track } = await player.play(voiceChannel, query, {
+                nodeOptions: {
+                    metadata: { channel: message.channel }
+                }
+            });
+
+            return message.followUp(`🔍 **${track.title}** arandı ve işleme alındı!`);
+        } catch (error) {
+            console.error(error);
+            return message.followUp('❌ Şarkı bulunamadı veya oynatılırken bir hata oluştu.');
+        }
+    }
+
+    if (command === 'geç' || command === 'skip') {
+        const queue = player.nodes.get(message.guild.id);
+        if (!queue || !queue.isPlaying()) return message.reply('❌ Şu anda çalan bir şarkı yok.');
+
+        queue.node.skip();
+        return message.reply('⏭️ Şarkı geçildi!');
+    }
+
+    if (command === 'dur' || command === 'stop') {
+        const queue = player.nodes.get(message.guild.id);
+        if (!queue) return message.reply('❌ Çalma listesi zaten boş.');
+
+        queue.delete();
+        return message.reply('⏹️ Müzik durduruldu ve kanal terk edildi.');
+    }
+
+    if (command === 'sıra' || command === 'queue') {
+        const queue = player.nodes.get(message.guild.id);
+        if (!queue || !queue.isPlaying()) return message.reply('❌ Şu anda çalan bir şarkı yok.');
+
+        const tracks = queue.tracks.toArray();
+        const currentTrack = queue.currentTrack;
+
+        let queueList = `**Şimdi Çalan:** ${currentTrack.title} - \`${currentTrack.duration}\`\n\n**Sıradakiler:**\n`;
+        
+        if (tracks.length === 0) {
+            queueList += 'Sırada başka şarkı yok.';
+        } else {
+            queueList += tracks.slice(0, 5).map((t, i) => `**${i + 1}.** ${t.title} - \`${t.duration}\``).join('\n');
+            if (tracks.length > 5) queueList += `\n...ve **${tracks.length - 5}** şarkı daha.`;
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('📜 Mekan Çalma Listesi')
+            .setColor('#1DB954')
+            .setDescription(queueList);
+
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'duraklat' || command === 'pause') {
+        const queue = player.nodes.get(message.guild.id);
+        if (!queue) return message.reply('❌ Çalan müzik yok.');
+
+        queue.node.setPaused(true);
+        return message.reply('⏸️ Müzik duraklatıldı.');
+    }
+
+    if (command === 'devam' || command === 'resume') {
+        const queue = player.nodes.get(message.guild.id);
+        if (!queue) return message.reply('❌ Çalan müzik yok.');
+
+        queue.node.setPaused(false);
+        return message.reply('▶️ Müzik çalmaya devam ediyor.');
+    }
+
     // ------------------ M.renk (RENK SEÇİM SİSTEMİ) ------------------
     if (command === 'renk' || command === 'renkler') {
         const embed = new EmbedBuilder()
@@ -365,7 +472,7 @@ client.on('messageCreate', async (message) => {
 
         const sec = parseInt(args[0]);
         if (isNaN(sec) || sec < 0 || sec > 21600) {
-            return message.reply('❌ Lütfen 0 ile 21600 (6 saat) arasında saniye cinsinden bir sayı girin. Örnek: `M.yavaş-mod 5`');
+            return message.reply('❌ Lütfen 0 ile 21600 (6 saat) arasında saniye cinsinden bir sayı girin.');
         }
 
         await message.channel.setRateLimitPerUser(sec);
@@ -482,7 +589,7 @@ client.on('messageCreate', async (message) => {
         }
 
         const ch = message.mentions.channels.first();
-        if (!ch) return message.reply('❌ Lütfen bir kanal etiketleyin veya kapatmak için `M.hoşgeldin-kanal sıfırla` yazın.');
+        if (!ch) return message.reply('❌ Lütfen bir kanal etiketleyin.');
         
         welcomeChannelSettings.set(guildId, ch.id);
         return message.reply(`👋 Hoş geldin kanalı ${ch} olarak ayarlandı.`);
@@ -499,7 +606,7 @@ client.on('messageCreate', async (message) => {
 
         const target = parseInt(args[0]);
         const ch = message.mentions.channels.first();
-        if (isNaN(target) || !ch) return message.reply('❌ Kullanım: `M.sayaç 100 #kanal` veya `M.sayaç sıfırla`');
+        if (isNaN(target) || !ch) return message.reply('❌ Kullanım: `M.sayaç 100 #kanal`');
         sayacSettings.set(guildId, { target, channelId: ch.id });
         return message.reply(`📊 Sayaç **${target}** olarak ayarlandı.`);
     }
@@ -533,7 +640,7 @@ client.on('messageCreate', async (message) => {
             }
 
             if (action === 'kapat') {
-                return message.reply(`🚫 Bu kanalda **${count}** adet harici botun mesaj göndermesi **engellendi**. Sadece Mekan Bot çalışacak!`);
+                return message.reply(`🚫 Bu kanalda **${count}** adet harici botun mesaj göndermesi **engellendi**.`);
             } else {
                 return message.reply(`✅ Bu kanalda **${count}** adet harici botun mesaj gönderme izni **tekrar açıldı**.`);
             }
@@ -555,7 +662,7 @@ client.on('messageCreate', async (message) => {
         }
 
         const role = message.mentions.roles.first();
-        if (!role) return message.reply('❌ Lütfen bir rol etiketleyin. Örnek: `M.oto-rol @Üye`');
+        if (!role) return message.reply('❌ Lütfen bir rol etiketleyin.');
 
         const botMember = message.guild.members.me;
         if (botMember.roles.highest.position <= role.position) {
@@ -563,7 +670,7 @@ client.on('messageCreate', async (message) => {
         }
 
         otoRolSettings.set(guildId, role.id);
-        return message.reply(`✅ **Oto-Rol başarıyla ayarlandı!** Yeni katılan üyelere **${role.name}** rolü verilecek.`);
+        return message.reply(`✅ **Oto-Rol başarıyla ayarlandı!**`);
     }
 
     // ------------------ MODERASYON ------------------
@@ -575,7 +682,6 @@ client.on('messageCreate', async (message) => {
         if (!member || !durationInput) return message.reply('❌ Kullanım: `M.mute @kullanıcı 10m Sebep`');
         const durationMs = parseDuration(durationInput);
         if (!durationMs) return message.reply('❌ Geçersiz süre formatı!');
-        if (!member.moderatable) return message.reply('❌ Bot rolünü bu kullanıcının üstüne taşıyın.');
 
         try {
             await member.timeout(durationMs, reason);
@@ -589,7 +695,6 @@ client.on('messageCreate', async (message) => {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) return message.reply('❌ Yetkiniz yok.');
         const member = message.mentions.members.first();
         if (!member) return message.reply('❌ Kullanıcı etiketleyin.');
-        if (!member.isCommunicationDisabled()) return message.reply('❌ Bu kullanıcı zaten mutesiz.');
 
         try {
             await member.timeout(null);
@@ -602,7 +707,7 @@ client.on('messageCreate', async (message) => {
     if (command === 'unban') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) return message.reply('❌ Yetkiniz yok.');
         const userId = args[0];
-        if (!userId) return message.reply('❌ Lütfen ID girin. Örnek: `M.unban 123456789012345678`');
+        if (!userId) return message.reply('❌ Lütfen ID girin.');
 
         try {
             await message.guild.members.unban(userId);
@@ -664,11 +769,12 @@ client.on('messageCreate', async (message) => {
             .setTitle('🛠️ Mekan Bot Komutları')
             .setColor('#5865F2')
             .addFields(
+                { name: '🎵 Müzik Sistemleri', value: '`M.çal [isim/link]` | `M.geç` | `M.dur` | `M.sıra` | `M.duraklat` | `M.devam`' },
                 { name: '🎨 İsim Rengi', value: '`M.renk` - İsim renginizi değiştirebileceğiniz butonlu menüyü açar.' },
-                { name: '🎉 Eğlence & Kullanıcı', value: '`M.yazıtura` | `M.zar` | `M.8ball [soru]`\n`M.xp` | `M.afk [sebep]` | `M.avatar` | `M.banner` | `M.profil`' },
-                { name: '🤖 Bot & Sunucu Bilgi', value: '`M.istatistik` - Bot durumunu gösterir.\n`M.sunucu-bilgi` - Sunucu bilgilerini gösterir.\n`M.harici-bot kapat/aç` - Diğer bot mesajlarını engeller.' },
-                { name: '🛡️ Moderasyon', value: '`M.mute @kullanıcı 10m` | `M.unmute @kullanıcı`\n`M.ban @kullanıcı` | `M.unban [ID]`\n`M.kick @kullanıcı` | `M.sil [sayı]`\n`M.yavaş-mod [saniye]`' },
-                { name: '⚙️ Sistemler', value: '`M.oto-rol @rol` (Sıfırlama: `M.oto-rol sıfırla`)\n`M.hoşgeldin-kanal #kanal` (Sıfırlama: `M.hoşgeldin-kanal sıfırla`)\n`M.sayaç [hedef] #kanal` (Sıfırlama: `M.sayaç sıfırla`)\n`M.sa-as aç/kapat` | `M.küfür-engel aç/kapat` | `M.link-engel aç/kapat`' }
+                { name: '🎉 Eğlence & Kullanıcı', value: '`M.yazıtura` | `M.zar` | `M.8ball` | `M.xp` | `M.afk` | `M.avatar` | `M.banner` | `M.profil`' },
+                { name: '🤖 Bot & Sunucu Bilgi', value: '`M.istatistik` | `M.sunucu-bilgi` | `M.harici-bot kapat/aç`' },
+                { name: '🛡️ Moderasyon', value: '`M.mute` | `M.unmute` | `M.ban` | `M.unban` | `M.kick` | `M.sil` | `M.yavaş-mod`' },
+                { name: '⚙️ Sistemler', value: '`M.oto-rol` | `M.hoşgeldin-kanal` | `M.sayaç` | `M.sa-as` | `M.küfür-engel` | `M.link-engel`' }
             );
         return message.reply({ embeds: [embed] });
     }
