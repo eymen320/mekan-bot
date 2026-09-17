@@ -20,7 +20,7 @@ const client = new Client({
 // Sistem Hafızaları (Bellek İçi Veritabanı)
 const userXP = new Map();
 const afkUsers = new Map();
-const guildSettings = new Map(); // sa-as, kufur, link, harici-bot, oto-rol, hosgeldin, sayac
+const guildSettings = new Map();
 
 const getSettings = (guildId) => {
   if (!guildSettings.has(guildId)) {
@@ -69,7 +69,7 @@ client.on('interactionCreate', async (interaction) => {
     let role = interaction.guild.roles.cache.find(r => r.name.toLowerCase() === colorName.toLowerCase());
     
     if (!role) {
-      return interaction.reply({ content: `❌ **${colorName}** adında bir rol bulunamadı! Lütfen önce sunucuda bu isimde rol oluşturun.`, ephemeral: true });
+      return interaction.reply({ content: `❌ **${colorName}** adında bir rol bulunamadı! Lütfen önce sunucuda bu isimde bir rol oluşturun.`, ephemeral: true });
     }
     await interaction.member.roles.add(role).catch(() => {});
     return interaction.reply({ content: `🎨 **${role.name}** rengi hesabınıza tanımlandı!`, ephemeral: true });
@@ -137,6 +137,25 @@ client.on('messageCreate', async (message) => {
 
   const args = message.content.slice(prefix.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
+
+  // ==================== YARDIM MENÜSÜ ====================
+
+  if (command === 'yardım' || command === 'yardim' || command === 'help') {
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle('🛠️ Mekan Bot - Komut Menüsü')
+      .setDescription('Botun tüm aktif komutları aşağıda kategorilenmiştir:')
+      .addFields(
+        { name: '🎨 Rol Menüsü', value: '`M.renk` - İsim rengi seçme menüsü' },
+        { name: '🎲 Eğlence & Kullanıcı', value: '`M.yazıtura` | `M.zar` | `M.8ball [soru]`\n`M.xp` | `M.afk [sebep]` | `M.avatar` | `M.banner` | `M.profil`' },
+        { name: '🤖 Bot & Sunucu Bilgi', value: '`M.istatistik` - Bot durumu\n`M.sunucu-bilgi` - Sunucu bilgileri\n`M.harici-bot aç/kapat` - Diğer botları engeller' },
+        { name: '🛡️ Moderasyon', value: '`M.mute @üye [dk]` | `M.unmute @üye`\n`M.ban @üye` | `M.unban [ID]`\n`M.kick @üye` | `M.sil [sayı]`\n`M.yavaş-mod [saniye]`' },
+        { name: '⚙️ Sistemler', value: '`M.oto-rol @rol` (Sıfırlama: `M.oto-rol sıfırla`)\n`M.hoşgeldin-kanal #kanal` (Sıfırlama: `M.hoşgeldin-kanal sıfırla`)\n`M.sayaç [hedef] #kanal` (Sıfırlama: `M.sayaç sıfırla`)\n`M.sa-as aç/kapat` | `M.küfür-engel aç/kapat` | `M.link-engel aç/kapat`' }
+      )
+      .setFooter({ text: 'Mekan Bot | M.yardım' });
+
+    return message.reply({ embeds: [embed] });
+  }
 
   // ==================== MENÜLER & BUTON ====================
 
