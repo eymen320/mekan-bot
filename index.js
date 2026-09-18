@@ -9,10 +9,12 @@ const {
 } = require('discord.js');
 const express = require('express');
 
-// 7/24 Açık Kalma İçin Web Sunucusu
+// 7/24 Açık Kalma İçin Web Sunucusu (Render Port Uyumlu)
 const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.get('/', (req, res) => res.send('Mekan Bot 7/24 Aktif!'));
-app.listen(3000, () => console.log('🌐 Web sunucusu 3000 portunda dinleniyor.'));
+app.listen(PORT, () => console.log(`🌐 Web sunucusu ${PORT} portunda dinleniyor.`));
 
 // Discord Bot Kurulumu
 const client = new Client({
@@ -676,4 +678,11 @@ client.on('messageCreate', async (message) => {
     if (command === 'ping') return message.reply(`🏓 Pong! **${client.ws.ping}ms**`);
 });
 
-client.login(TOKEN);
+// Güvenli Giriş & Hata Yakalama
+if (!TOKEN) {
+    console.error('❌ CRITICAL ERROR: Render Environment ayarlarında TOKEN bulunamadı!');
+} else {
+    client.login(TOKEN).catch((err) => {
+        console.error('❌ DISCORD BAGLANTI HATASI:', err.message);
+    });
+}
